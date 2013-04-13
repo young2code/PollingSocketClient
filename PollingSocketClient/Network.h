@@ -12,7 +12,7 @@ namespace Network
 	bool Init();
 	void Shutdown();
 
-	SOCKET CreateSocket(bool bind, u_short port, int aiFamily = AF_INET);
+	SOCKET CreateSocket(bool bind = true, u_short port = 0, int aiFamily = AF_INET);
 	void CloseSocket(SOCKET socket);
 
 	BOOL AcceptEx(SOCKET listenSocket, SOCKET newSocket, LPOVERLAPPED overlapped);
