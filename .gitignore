@@ -1,0 +1,5 @@
+PollingSocketClient/Debug/
+PollingSocketClient/Release
+*.ncb
+*.suo
+*.user
