@@ -9,7 +9,7 @@ class PollingSocket
 {
 public:
 	typedef boost::function<void (void)> OnConnectFunc;
-	typedef boost::function<void (bool, const rapidjson::Document& data)> OnRecvFunc;
+	typedef boost::function<void (bool, rapidjson::Document& data)> OnRecvFunc;
 	typedef boost::function<void (void)> OnCloseFunc;
 
 public:
@@ -17,15 +17,13 @@ public:
 	~PollingSocket();
 
 	void Init(OnConnectFunc onConnect, OnRecvFunc onRecv, OnCloseFunc onClose);
-	void Shutdown();
+	void Shutdown(bool closeCallback = true);
 
 	void Poll();
 
 	void AsyncConnect(const char* serverAddress);
 	void AsyncSend(const char* jsonStr, int total);
 	void AsyncSend(const rapidjson::Document& data);
-
-	bool IsConnected() const { return mConnected; }
 
 private:
 	void TrySend();
@@ -36,7 +34,15 @@ private:
 private:
 	SOCKET mSocket;
 
-	bool mConnected;
+	enum State
+	{
+		kStateWait,
+		kStateConnecting,
+		kStateConnected,
+		kStateClosed,
+	};
+
+	State mState;
 
 	OnConnectFunc mConnectCallback;
 	OnRecvFunc mRecvCallback;

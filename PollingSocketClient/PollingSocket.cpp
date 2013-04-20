@@ -17,7 +17,7 @@ namespace
 
 PollingSocket::PollingSocket()
 	: mSocket(INVALID_SOCKET)
-	, mConnected(false)
+	, mState(kStateClosed)
 	, mRecvBuffer(kMaxDataSize)
 	, mSendBuffer(kMaxDataSize)
 {
@@ -42,23 +42,26 @@ void PollingSocket::Init(OnConnectFunc onConnect, OnRecvFunc onRecv, OnCloseFunc
 	{
 		ERROR_CODE(WSAGetLastError(), "PollingSocket::Init() - ioctlsocket failed.");
 		Shutdown();
+		return;
 	}
 
 	std::string address;
 	u_short port;
 	Network::GetLocalAddress(mSocket, address, port);
 	LOG("PollingSocket::Init() - socket created. [%s:%d]", address.c_str(), port);
+
+	mState = kStateWait;
 }
 
 
-void PollingSocket::Shutdown()
+void PollingSocket::Shutdown(bool closeCallback)
 {
-	mCloseCallback();
+	OnCloseFunc onClose = mCloseCallback;
 
 	Network::CloseSocket(mSocket);
 	mSocket = INVALID_SOCKET;
 
-	mConnected = false;
+	mState = kStateClosed;
 
 	mConnectCallback.clear();
 	mRecvCallback.clear();
@@ -66,11 +69,22 @@ void PollingSocket::Shutdown()
 
 	mRecvBuffer.clear();
 	mSendBuffer.clear();
+
+	if (closeCallback)
+	{
+		// give a chance to re-init this.
+		onClose();
+	}
 }
 
 
 void PollingSocket::Poll()
 {
+	if (mState == kStateClosed || mState == kStateWait)
+	{
+		return;
+	}
+
 	fd_set read_set, write_set, except_set;
 
 	memset(&read_set, 0, sizeof(fd_set));
@@ -104,9 +118,9 @@ void PollingSocket::Poll()
 
 	if (FD_ISSET(mSocket, &write_set))
 	{
-		if (!mConnected)
+		if (mState == kStateConnecting)
 		{
-			mConnected = true;
+			mState = kStateConnected;
 			mConnectCallback();
 
 			std::string address;
@@ -122,10 +136,11 @@ void PollingSocket::Poll()
 
 	if (FD_ISSET(mSocket, &except_set))
 	{
-		if (!mConnected)
+		if (mState == kStateConnecting)
 		{			
 			LOG("PollingSocket::Poll() - connect failed.");
 			Shutdown();
+			return;
 		}
 	}
 
@@ -134,7 +149,11 @@ void PollingSocket::Poll()
 
 void PollingSocket::AsyncConnect(const char* serverAddress)
 {
-	assert(!mConnected);
+	if(mState != kStateWait)
+	{
+		return;
+	}
+
 	assert(mSocket != INVALID_SOCKET);
 		
     sockaddr_in address;
@@ -155,13 +174,21 @@ void PollingSocket::AsyncConnect(const char* serverAddress)
 		{
 			ERROR_CODE(WSAGetLastError(), "PollingSocket::AsyncConnect() - connect failed.");
 			Shutdown();
+			return;
 		}
 	}	
+
+	mState = kStateConnecting;
 }
 
 
 void PollingSocket::AsyncSend(const char* jsonStr, int total)
 {
+	if(mState != kStateConnected)
+	{
+		return;
+	}
+
 	int available = mSendBuffer.capacity() - mSendBuffer.size();
 	if (available < total)
 	{
@@ -177,6 +204,11 @@ void PollingSocket::AsyncSend(const char* jsonStr, int total)
 	
 void PollingSocket::AsyncSend(const rapidjson::Document& data)
 {
+	if(mState != kStateConnected)
+	{
+		return;
+	}
+
 	rapidjson::StringBuffer buffer;
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	data.Accept(writer);
@@ -187,7 +219,7 @@ void PollingSocket::AsyncSend(const rapidjson::Document& data)
 
 void PollingSocket::TrySend()
 {
-	assert(mConnected);
+	assert(mState == kStateConnected);
 
 	while (!mSendBuffer.empty())
 	{
@@ -208,7 +240,10 @@ void PollingSocket::TrySend()
 			{
 				ERROR_CODE(WSAGetLastError(), "PollingSocket::TrySend() - send failed.");
 				Shutdown();				
+				return;
 			}
+
+			// WSAEWOULDBLOCK.
 			return;
 		}
 		
@@ -225,7 +260,7 @@ void PollingSocket::TrySend()
 
 void PollingSocket::TryRecv()
 {
-	assert(mConnected);
+	assert(mState == kStateConnected);
 
 	int result = 0;
 	char temp[kMaxDataSize];
@@ -250,11 +285,13 @@ void PollingSocket::TryRecv()
 	{
 		LOG("PollingSocket::OnReceive - closed by remote.");
 		Shutdown();
+		return;
 	}
 	else if (SOCKET_ERROR == result && WSAEWOULDBLOCK != WSAGetLastError())
 	{
 		ERROR_CODE(WSAGetLastError(), "PollingSocket::OnReceive - recv failed.");
 		Shutdown();
+		return;
 	}
 
 	assert(WSAEWOULDBLOCK == WSAGetLastError());
