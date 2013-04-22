@@ -75,7 +75,7 @@ void main(int argc, char* argv[])
 	{
 		pollingSocket.Poll();
 
-		if (rand() % 100 < 10)
+		if (rand() % 1000 < 10)
 		{
 			rapidjson::Document data;
 			data.SetObject();

@@ -219,7 +219,10 @@ void PollingSocket::AsyncSend(const rapidjson::Document& data)
 
 void PollingSocket::TrySend()
 {
-	assert(mState == kStateConnected);
+	if(mState != kStateConnected)
+	{
+		return;
+	}
 
 	while (!mSendBuffer.empty())
 	{
@@ -260,7 +263,10 @@ void PollingSocket::TrySend()
 
 void PollingSocket::TryRecv()
 {
-	assert(mState == kStateConnected);
+	if(mState != kStateConnected)
+	{
+		return;
+	}
 
 	int result = 0;
 	char temp[kMaxDataSize];
