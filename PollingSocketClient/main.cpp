@@ -14,13 +14,13 @@ public:
 	{
 	}
 
-	void OnConnect()
+	void OnConnect(PollingSocket*)
 	{
 		LOG("Test::OnConnect()");
 	}
 
 
-	void OnRecv(bool, const rapidjson::Document& data)
+	void OnRecv(PollingSocket*, bool, const rapidjson::Document& data)
 	{
 		rapidjson::StringBuffer buffer;
 		rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -30,7 +30,7 @@ public:
 	}
 
 
-	void OnClose()
+	void OnClose(PollingSocket*)
 	{
 		LOG("Test::OnClose()");
 		mClosed = true;
@@ -64,11 +64,11 @@ void main(int argc, char* argv[])
 	PollingSocket pollingSocket;
 
 	Test test(pollingSocket);
-	PollingSocket::OnConnectFunc onConnect = boost::bind(&Test::OnConnect, &test);
-	PollingSocket::OnRecvFunc onRecv = boost::bind(&Test::OnRecv, &test, _1, _2);
-	PollingSocket::OnCloseFunc onClose = boost::bind(&Test::OnClose, &test);
+	PollingSocket::OnConnectFunc onConnect = boost::bind(&Test::OnConnect, &test, _1);
+	PollingSocket::OnRecvFunc onRecv = boost::bind(&Test::OnRecv, &test, _1, _2, _3);
+	PollingSocket::OnCloseFunc onClose = boost::bind(&Test::OnClose, &test, _1);
 
-	pollingSocket.Init(onConnect, onRecv, onClose);
+	pollingSocket.InitWait(onConnect, onRecv, onClose);
 	pollingSocket.AsyncConnect(address);
 
 	while (!test.IsClosed())

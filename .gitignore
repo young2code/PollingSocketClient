@@ -3,3 +3,12 @@ PollingSocketClient/Release
 *.ncb
 *.suo
 *.user
+PollingSocketClient/_UpgradeReport_Files/UpgradeReport.css
+PollingSocketClient/_UpgradeReport_Files/UpgradeReport.xslt
+PollingSocketClient/_UpgradeReport_Files/UpgradeReport_Error.png
+PollingSocketClient/_UpgradeReport_Files/UpgradeReport_Information.png
+PollingSocketClient/_UpgradeReport_Files/UpgradeReport_Success.png
+PollingSocketClient/_UpgradeReport_Files/UpgradeReport_Warning.png
+PollingSocketClient/PollingSocketClient.sdf
+PollingSocketClient/UpgradeLog.htm
+PollingSocketClient/UpgradeLog.XML

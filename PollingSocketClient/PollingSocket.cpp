@@ -29,33 +29,85 @@ PollingSocket::~PollingSocket()
 }
 
 
-void PollingSocket::Init(OnConnectFunc onConnect, OnRecvFunc onRecv, OnCloseFunc onClose)
+bool PollingSocket::CreateSocket(unsigned short port)
 {
-	mConnectCallback = onConnect;
-	mRecvCallback = onRecv;
-	mCloseCallback = onClose;
-
-	mSocket = Network::CreateSocket();
+	mSocket = Network::CreateSocket(true, port);
 
 	u_long mode = 1; // should be non-zero for non-blocking socket.
 	if (NO_ERROR != ioctlsocket(mSocket, FIONBIO, &mode))
 	{
 		ERROR_CODE(WSAGetLastError(), "PollingSocket::Init() - ioctlsocket failed.");
 		Shutdown();
-		return;
+		return false;
 	}
 
 	std::string address;
-	u_short port;
-	Network::GetLocalAddress(mSocket, address, port);
-	LOG("PollingSocket::Init() - socket created. [%s:%d]", address.c_str(), port);
+	u_short portAssigned;
+	Network::GetLocalAddress(mSocket, address, portAssigned);
+	LOG("PollingSocket::CreateSocket() - socket created. [%s:%d]", address.c_str(), portAssigned);
+
+	return true;
+}
+
+
+bool PollingSocket::InitWait(OnConnectFunc onConnect, OnRecvFunc onRecv, OnCloseFunc onClose)
+{
+	mConnectCallback = onConnect;
+	mRecvCallback = onRecv;
+	mCloseCallback = onClose;
+
+	if (!CreateSocket(0))
+	{
+		return false;
+	}
 
 	mState = kStateWait;
+	return true;
+}
+
+
+bool PollingSocket::InitListen(unsigned short port, OnAcceptFunc onAccept, OnCloseFunc onClose)
+{
+	mAcceptCallback = onAccept;
+	mCloseCallback = onClose;
+
+	if (!CreateSocket(port))
+	{
+		return false;
+	}
+
+	if (SOCKET_ERROR == listen(mSocket, SOMAXCONN))
+	{
+		ERROR_CODE(WSAGetLastError(), "PollingSocket::InitListen() - failed");
+		Shutdown();
+		return false;
+	}
+
+	mState = kStateListening;
+	return true;
+}
+
+
+void PollingSocket::InitAccept(SOCKET socketAccpted, OnRecvFunc onRecv, OnCloseFunc onClose)
+{
+	assert(socketAccpted != INVALID_SOCKET);
+
+	mSocket = socketAccpted;
+
+	mRecvCallback = onRecv;
+	mCloseCallback = onClose;
+
+	mState = kStateConnected;
 }
 
 
 void PollingSocket::Shutdown(bool closeCallback)
 {
+	if (mState == kStateClosed)
+	{
+		return;
+	}
+
 	OnCloseFunc onClose = mCloseCallback;
 
 	Network::CloseSocket(mSocket);
@@ -73,7 +125,7 @@ void PollingSocket::Shutdown(bool closeCallback)
 	if (closeCallback)
 	{
 		// give a chance to re-init this.
-		onClose();
+		onClose(this);
 	}
 }
 
@@ -113,7 +165,14 @@ void PollingSocket::Poll()
 
 	if (FD_ISSET(mSocket, &read_set))
 	{
-		TryRecv();
+		if (mState == kStateListening)
+		{
+			mAcceptCallback(this);
+		}
+		else
+		{
+			TryRecv();
+		}
 	}
 
 	if (FD_ISSET(mSocket, &write_set))
@@ -121,7 +180,7 @@ void PollingSocket::Poll()
 		if (mState == kStateConnecting)
 		{
 			mState = kStateConnected;
-			mConnectCallback();
+			mConnectCallback(this);
 
 			std::string address;
 			u_short port;
@@ -331,7 +390,7 @@ void PollingSocket::GenerateJSON()
 			LOG("PollingSocket::GenerateJSON - parsing succeeded. %s", jsonStr.data());
 		}
 
-		mRecvCallback(jsonData.HasParseError(), jsonData);
+		mRecvCallback(this, jsonData.HasParseError(), jsonData);
 
 		itorEnd = std::find(mRecvBuffer.begin(), mRecvBuffer.end(), '\0');
 	}
